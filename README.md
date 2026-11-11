@@ -31,7 +31,7 @@ Pulse provides system resource monitoring, configurable Slack and email alerting
 
 v2.3.2 introduced a modular application structure separating the API, monitoring, alerting, logging, and dashboard components to improve maintainability.
 
-Recent maintenance work expanded CI to start the complete Docker Compose stack, verify the API, Prometheus, and Grafana health endpoints, and confirm that Prometheus is successfully scraping Pulse. Prometheus and Grafana images are pinned to explicit versions, and Dependabot checks Docker images and GitHub Actions weekly.
+Recent maintenance work expanded CI to start the complete Docker Compose stack, verify the API, Prometheus, and Grafana health endpoints, and confirm that Prometheus is successfully scraping Pulse. Prometheus and Grafana images are pinned to explicit versions.
 
 Future work is focused on maintenance, security and dependency updates, alert reliability, documentation, and infrastructure improvements.
 
