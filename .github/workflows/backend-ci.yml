@@ -1,0 +1,110 @@
+name: Backend CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  backend-checks:
+    runs-on: ubuntu-latest
+
+    env:
+      SLACK_WEBHOOK_URL: https://example.com/test-webhook
+      EMAIL_HOST: smtp.example.com
+      EMAIL_PORT: 587
+      EMAIL_USER: test@example.com
+      EMAIL_PASSWORD: test-password
+      EMAIL_TO: test@example.com
+      OK_THRESHOLD: 45
+      WARNING_THRESHOLD: 75
+      CRITICAL_THRESHOLD: 95
+      REFRESH_INTERVAL: 300
+      ALERT_COOLDOWN_SECONDS: 1800
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Check Python syntax
+        run: |
+          python -m compileall .
+
+      - name: Check module imports
+        run: |
+          python -c "import app.logging.logger; print('logger imported successfully')"
+          python -c "import alerts; print('alerts imported successfully')"
+          python -c "import email_alerts; print('email_alerts imported successfully')"
+          python -c "import app.main; print('main imported successfully')"
+          python -c "import app.api.health; print('health_api imported successfully')"
+
+      - name: Run tests if available
+        run: |
+          if [ -d tests ]; then
+            python -m pip install pytest
+            pytest
+          else
+            echo "No tests folder found"
+          fi
+
+      - name: Start monitoring stack
+        run: |
+          cp .env.example .env
+          docker compose up --build -d
+
+      - name: Verify API, Prometheus and Grafana
+        run: |
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/health >/dev/null \
+              && curl --fail --silent http://127.0.0.1:9090/-/healthy >/dev/null \
+              && curl --fail --silent http://127.0.0.1:3000/api/health >/dev/null; then
+              break
+            fi
+
+            if [ "$i" -eq 30 ]; then
+              echo "The Compose services did not become healthy in time."
+              exit 1
+            fi
+
+            echo "Waiting for the monitoring stack..."
+            sleep 2
+          done
+
+          for i in {1..30}; do
+            if curl --fail --silent \
+              'http://127.0.0.1:9090/api/v1/query?query=up%7Bjob%3D%22pulse%22%7D' \
+              | jq --exit-status '.data.result | any(.value[1] == "1")' >/dev/null; then
+              echo "Prometheus is successfully scraping Pulse."
+              exit 0
+            fi
+
+            if [ "$i" -eq 30 ]; then
+              echo "Prometheus did not report the Pulse target as healthy."
+              exit 1
+            fi
+
+            echo "Waiting for the first successful Prometheus scrape..."
+            sleep 2
+          done
+
+      - name: Show monitoring stack logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop monitoring stack
+        if: always()
+        run: docker compose down --volumes --remove-orphans
+        
